@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JupiterBox Monitor</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #16213e 100%);
+            color: #ffffff;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            text-shadow: 0 0 20px rgba(0, 255, 255, 0.5);
+            animation: glow 2s ease-in-out infinite alternate;
+        }
+
+        .controls-bar {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .refresh-btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 16px;
+            background: rgba(0, 255, 0, 0.2);
+            color: white;
+            border: 2px solid rgba(0, 255, 0, 0.5);
+            transition: all 0.3s ease;
+        }
+
+        .refresh-btn:hover {
+            background: rgba(0, 255, 0, 0.4);
+            transform: scale(1.05);
+        }
+
+        .status-bar {
+            background: rgba(0, 0, 0, 0.5);
+            padding: 10px 20px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+            text-align: center;
+            border: 1px solid rgba(0, 255, 0, 0.3);
+        }
+
+        .rooms-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 20px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .room-card {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 20px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .room-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, #00ff00, #00ffff, #0080ff);
+            animation: scan 3s linear infinite;
+        }
+
+        .room-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(0, 255, 255, 0.3);
+        }
+
+        .room-name {
+            font-size: 1.4rem;
+            font-weight: bold;
+            margin-bottom: 15px;
+            text-align: center;
+            color: #00ffff;
+            text-shadow: 0 0 10px rgba(0, 255, 255, 0.5);
+        }
+
+        .parameter {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+            padding: 8px 12px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            border-left: 3px solid;
+        }
+
+        .parameter.temperature { border-left-color: #ff4444; }
+        .parameter.humidity { border-left-color: #4444ff; }
+        .parameter.oxygen { border-left-color: #44ff44; }
+        .parameter.radiation { border-left-color: #ffff44; }
+
+        .parameter-label {
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .parameter-value {
+            font-family: 'Courier New', monospace;
+            font-size: 1.1rem;
+            font-weight: bold;
+            padding: 4px 8px;
+            border-radius: 4px;
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .temperature .parameter-value { color: #ff6666; }
+        .humidity .parameter-value { color: #6666ff; }
+        .oxygen .parameter-value { color: #66ff66; }
+        .radiation .parameter-value { color: #ffff66; }
+
+        .critical {
+            background: rgba(255, 0, 0, 0.2);
+            border-left-color: #ff0000 !important;
+        }
+
+        .loading {
+            text-align: center;
+            font-size: 1.2rem;
+            color: #00ffff;
+            margin: 50px 0;
+        }
+
+        .icon {
+            width: 16px;
+            height: 16px;
+            display: inline-block;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🚀 JupiterBox Panel</h1>
+        <div class="status-bar">
+            <span id="status">Łączenie z systemami stacji...</span>
+        </div>
+        <div class="controls-bar">
+            <button class="refresh-btn" onclick="refreshAllData()">🔄 Odśwież wszystkie dane</button>
+        </div>
+    </div>
+
+    <div id="loading" class="loading">
+        Ładowanie danych z systemów stacji...
+    </div>
+
+    <div id="rooms-container" class="rooms-grid" style="display: none;">
+    </div>
+
+    <script type="module">
+  
+        // TUTAJ ŁĄCZYMY SIĘ Z NASZYM KODEM MOTOKO 
+        import { backend } from 'declarations/backend';
+        let rooms = new Map();
+
+        function getParameterIcon(parameter) {
+            const icons = {
+                temperature: '🌡️',
+                humidity: '💧',
+                oxygen: '🫁',
+                radiation: '☢️'
+            };
+            return icons[parameter] || '';
+        }
+
+        function isCritical(parameter, value) {
+            const criticalRanges = {
+                temperature: { min: 15, max: 30 },
+                humidity: { min: 30, max: 70 },
+                oxygen: { min: 18, max: 25 },
+                radiation: { min: 0, max: 1.0 }
+            };
+            
+            const range = criticalRanges[parameter];
+            if (!range) return false;
+            
+            return value < range.min || value > range.max;
+        }
+
+        function createRoomCard(id, room) {
+            const card = document.createElement('div');
+            card.className = 'room-card';
+            card.innerHTML = `
+                <div class="room-name">${room.name}</div>
+                <div class="parameter temperature ${isCritical('temperature', room.temperature) ? 'critical' : ''}">
+                    <span class="parameter-label">
+                        <span class="icon">${getParameterIcon('temperature')}</span>
+                        Temperatura:
+                    </span>
+                    <span class="parameter-value">${room.temperature}°C</span>
+                </div>
+                <div class="parameter humidity ${isCritical('humidity', room.humidity) ? 'critical' : ''}">
+                    <span class="parameter-label">
+                        <span class="icon">${getParameterIcon('humidity')}</span>
+                        Wilgotność:
+                    </span>
+                    <span class="parameter-value">${room.humidity}%</span>
+                </div>
+                <div class="parameter oxygen ${isCritical('oxygen', room.oxygen) ? 'critical' : ''}">
+                    <span class="parameter-label">
+                        <span class="icon">${getParameterIcon('oxygen')}</span>
+                        Tlen:
+                    </span>
+                    <span class="parameter-value">${room.oxygen}%</span>
+                </div>
+                <div class="parameter radiation ${isCritical('radiation', room.radiation) ? 'critical' : ''}">
+                    <span class="parameter-label">
+                        <span class="icon">${getParameterIcon('radiation')}</span>
+                        Promieniowanie:
+                    </span>
+                    <span class="parameter-value">${room.radiation.toFixed(1)} mSv/h</span>
+                </div>
+            `;
+            return card;
+        }
+
+        async function loadRooms() {
+            try {
+                document.getElementById('status').textContent = 'Łączenie z backendem stacji kosmicznej...';
+                
+               
+                const roomData = await backend.getAllRooms();
+              
+                rooms.clear();
+                const container = document.getElementById('rooms-container');
+                container.innerHTML = '';
+
+               
+                for (const [id, room] of roomData) {
+                    rooms.set(id, room);
+                    container.appendChild(createRoomCard(id, room));
+                }
+
+                document.getElementById('loading').style.display = 'none';
+                container.style.display = 'grid';
+                document.getElementById('status').textContent = `Połączono z backendem - załadowano ${roomData.length} pomieszczeń`;
+                
+            } catch (error) {
+                console.error('Błąd podczas ładowania pomieszczeń z backendu:', error);
+                document.getElementById('status').textContent = 'Błąd połączenia z backendem Motoko';
+                document.getElementById('loading').textContent = 'Nie można połączyć się z backendem. Sprawdź czy kanister jest uruchomiony.';
+            }
+        }
+
+       
+        window.refreshAllData = function() {
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('rooms-container').style.display = 'none';
+            loadRooms();
+        };
+
+       
+        loadRooms();
+    </script>
+</body>
+</html>
